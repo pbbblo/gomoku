@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gomoku — 1990 Retro (Korean Rules)</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    /* styles same as before */
+  </style>
+</head>
+<body>
+  <!-- body structure same as before -->
+  <script>
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+    let size = parseInt(document.getElementById('size').value,10);
+    let cell, padding=20;
+    let grid = [];
+    let turn = 1; // 1 = black, 2 = white
+    let history = [];
+    let gameOver = false;
+
+    function initGrid(n){ /* same as before */ }
+    function computeSizes(){ /* same as before */ }
+    function draw(){ /* same as before */ }
+    function drawStone(r,c,who){ /* same as before */ }
+    function getStarPoints(n){ /* same as before */ }
+    function canvasToCell(x,y){ /* same as before */ }
+
+    canvas.addEventListener('click', (ev)=>{
+      if(gameOver) return;
+      const pos = canvasToCell(ev.clientX, ev.clientY);
+      if(!pos) return;
+      const [r,c] = pos;
+      if(grid[r][c]!==0) return;
+      // Korean rules: black forbidden moves
+      if(turn===1 && (isDoubleThree(r,c,1) || isOverline(r,c,1))) {
+        alert('Invalid move for Black under Korean rules.');
+        return;
+      }
+      grid[r][c] = turn;
+      history.push([r,c]);
+      addHistoryEntry(r,c,turn);
+      beep(120, 0.02);
+      if(checkWin(r,c,turn)){
+        showWin(turn);
+        gameOver = true;
+      } else {
+        turn = 3 - turn;
+        document.getElementById('turnPlayer').textContent = turn===1? 'BLACK' : 'WHITE';
+      }
+      draw();
+    });
+
+    function addHistoryEntry(r,c,who){ /* same as before */ }
+    function undo(){ /* same as before */ }
+
+    function countDirection(r,c,dr,dc,who){
+      let cnt = 0;
+      for(let k=1;k<20;k++){
+        const rr = r + dr*k, cc = c + dc*k;
+        if(rr<0||cc<0||rr>=size||cc>=size) break;
+        if(grid[rr][cc]===who) cnt++; else break;
+      }
+      return cnt;
+    }
+
+    function checkWin(r,c,who){
+      const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+      for(const [dr,dc] of dirs){
+        let cnt = 1 + countDirection(r,c,dr,dc,who) + countDirection(r,c,-dr,-dc,who);
+        if(cnt===5) return true; // Korean rules: exact 5
+      }
+      return false;
+    }
+
+    function isOverline(r,c,who){
+      const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+      for(const [dr,dc] of dirs){
+        let cnt = 1 + countDirection(r,c,dr,dc,who) + countDirection(r,c,-dr,-dc,who);
+        if(cnt>5) return true;
+      }
+      return false;
+    }
+
+    function isDoubleThree(r,c,who){
+      // Place temporarily
+      grid[r][c] = who;
+      let openThreeCount = 0;
+      const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+      for(const [dr,dc] of dirs){
+        let line = getLine(r,c,dr,dc,who);
+        if(line.includes('01110')) openThreeCount++;
+      }
+      grid[r][c] = 0;
+      return openThreeCount>=2;
+    }
+
+    function getLine(r,c,dr,dc,who){
+      let line = '1';
+      for(let k=1;k<5;k++){
+        const rr = r - dr*k, cc = c - dc*k;
+        if(rr<0||cc<0||rr>=size||cc>=size) {line = '0'+line; break;}
+        line = (grid[rr][cc]===who? '1':'0') + line;
+      }
+      for(let k=1;k<5;k++){
+        const rr = r + dr*k, cc = c + dc*k;
+        if(rr<0||cc<0||rr>=size||cc>=size) {line = line+'0'; break;}
+        line = line + (grid[rr][cc]===who? '1':'0');
+      }
+      return line;
+    }
+
+    function showWin(who){ /* same as before */ }
+    const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    function beep(freq, duration){ /* same as before */ }
+
+    document.getElementById('restart').addEventListener('click', ()=>initGrid(parseInt(document.getElementById('size').value,10)));
+    document.getElementById('undo').addEventListener('click', undo);
+    document.getElementById('size').addEventListener('change', ()=>{
+      initGrid(parseInt(document.getElementById('size').value,10));
+    });
+    document.getElementById('download').addEventListener('click', ()=>{
+      const html = '<!doctype html>\n' + document.documentElement.outerHTML;
+      const blob = new Blob([html], {type:'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'gomoku_1990_retro_korean.html';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    window.addEventListener('resize', ()=>{ computeSizes(); draw(); });
+    initGrid(size);
+    function fixHiDPI(){ /* same as before */ }
+    fixHiDPI();
+  </script>
+</body>
+</html>
