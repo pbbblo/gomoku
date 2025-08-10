@@ -1,0 +1,334 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gomoku — 1990 Retro</title>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg:#0b1020; --panel:#081221; --neon1:#39ff14; --neon2:#00c8ff; --accent:#ff4da6; --glass: rgba(255,255,255,0.03);
+    }
+    html,body{height:100%;margin:0;font-family:'Press Start 2P',monospace;background: radial-gradient(circle at 10% 10%, rgba(0,200,255,0.06), transparent 6%), linear-gradient(180deg,#03040a 0%, #07102d 60%, #081221 100%), var(--bg); color:#cfe9ff}
+    .wrap{min-height:100%;display:flex;align-items:center;justify-content:center;padding:28px;box-sizing:border-box}
+    .card{width:980px;max-width:96vw;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.02);border:2px solid rgba(255,255,255,0.03);display:flex;gap:18px}
+
+    /* left: board */
+    .left{flex:0 0 640px;display:flex;flex-direction:column;align-items:center;gap:12px}
+    canvas{background: linear-gradient(180deg,#081221,#061426);border-radius:6px;image-rendering:pixelated;box-shadow:0 6px 18px rgba(0,0,0,0.7), 0 0 20px rgba(0,200,255,0.04) inset; border:4px solid rgba(0,0,0,0.4)}
+    .screen-frame{padding:6px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.12));border-radius:8px}
+    .controls{display:flex;gap:8px;align-items:center}
+    button{background:var(--glass);border:2px solid rgba(255,255,255,0.03);padding:8px 12px;border-radius:8px;color:var(--neon2);cursor:pointer;font-family:inherit}
+    button:hover{transform:translateY(-2px)}
+
+    /* right: info */
+    .right{flex:1;min-width:260px;padding:12px;display:flex;flex-direction:column;gap:12px}
+    .panel{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.08));padding:12px;border-radius:10px;border:1px solid rgba(255,255,255,0.02);box-shadow:inset 0 -8px 20px rgba(0,0,0,0.4)}
+    h1{font-size:14px;margin:0 0 6px 0;color:var(--neon1);text-shadow:0 0 8px rgba(57,255,20,0.08)}
+    .meta{font-size:11px;color:#9fc9ff;line-height:1.4}
+    .turn{font-size:12px;color:var(--neon2)}
+    .history{height:220px;overflow:auto;padding:8px;background:rgba(0,0,0,0.15);border-radius:6px;color:#cfe9ff}
+
+    /* CRT scanlines */
+    .crt:after{content:"";position:absolute;left:0;top:0;right:0;bottom:0;pointer-events:none;background-image:linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px);background-size:100% 4px;border-radius:8px;mix-blend-mode:overlay}
+
+    .footer{font-size:10px;color:#7fbfff;opacity:0.9}
+
+    .overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg, rgba(2,6,12,0.6), rgba(2,6,12,0.85));backdrop-filter:blur(2px);}
+    .modal{background:#0b1220;padding:20px;border-radius:12px;border:2px solid rgba(255,255,255,0.03);text-align:center}
+    .neon-win{color:var(--accent);font-size:18px;margin-bottom:8px;text-shadow:0 0 8px rgba(255,77,166,0.18)}
+
+    /* responsive */
+    @media (max-width:880px){.card{flex-direction:column}.left{flex:unset}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="left">
+        <div class="screen-frame crt" style="position:relative">
+          <canvas id="board" width="640" height="640"></canvas>
+        </div>
+        <div class="controls">
+          <button id="restart">RESTART</button>
+          <button id="undo">UNDO</button>
+          <button id="download">DOWNLOAD HTML</button>
+          <label style="font-size:11px;color:#9fc9ff;margin-left:8px">Grid: <select id="size"><option>15</option><option>13</option><option>19</option></select></label>
+        </div>
+      </div>
+      <div class="right">
+        <div class="panel">
+          <h1>GOMOKU — 1990 RETRO</h1>
+          <div class="meta">Classic five-in-a-row on a pixel-perfect board. Local 2-player (hotseat). Click to place a stone. Retro visuals + CRT glow + chiptune beep.</div>
+        </div>
+        <div class="panel">
+          <div class="turn" id="turnDisplay">TURN: <span id="turnPlayer">BLACK</span></div>
+          <div class="history" id="history">Moves:<br></div>
+        </div>
+        <div class="panel">
+          <div class="footer">Controls: Click board to place. UNDO up to last move. Resize grid before starting a new game.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <template id="winTemplate">
+    <div class="overlay">
+      <div class="modal">
+        <div class="neon-win" id="winText">PLAYER WINS</div>
+        <button id="closeWin">CLOSE</button>
+      </div>
+    </div>
+  </template>
+
+  <script>
+    // Retro-style Gomoku implementation (hotseat)
+    const canvas = document.getElementById('board');
+    const ctx = canvas.getContext('2d');
+    let size = parseInt(document.getElementById('size').value,10);
+    let cell, padding=20;
+    let grid = [];
+    let turn = 1; // 1 = black, 2 = white
+    let history = [];
+    let gameOver = false;
+
+    function initGrid(n){
+      size = n;
+      grid = Array.from({length:n}, ()=>Array(n).fill(0));
+      history = [];
+      gameOver = false;
+      turn = 1;
+      document.getElementById('turnPlayer').textContent = 'BLACK';
+      document.getElementById('history').innerHTML = 'Moves:<br>';
+      computeSizes();
+      draw();
+    }
+
+    function computeSizes(){
+      const W = canvas.width;
+      const H = canvas.height;
+      padding = Math.floor(W*0.04);
+      const usable = W - padding*2;
+      cell = Math.floor(usable / (size-1));
+      // center offset to match grid
+    }
+
+    function draw(){
+      // background
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      // subtle static
+      ctx.fillStyle = '#071226';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+
+      // grid lines
+      ctx.strokeStyle = 'rgba(170,200,255,0.18)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      for(let i=0;i<size;i++){
+        const x = padding + i*cell;
+        const y = padding + i*cell;
+        // vertical
+        ctx.moveTo(Math.round(x)+0.5, padding+0.5);
+        ctx.lineTo(Math.round(x)+0.5, padding + (size-1)*cell + 0.5);
+        // horizontal
+        ctx.moveTo(padding+0.5, Math.round(y)+0.5);
+        ctx.lineTo(padding + (size-1)*cell + 0.5, Math.round(y)+0.5);
+      }
+      ctx.stroke();
+
+      // star points for aesthetic (like go)
+      const starIdx = getStarPoints(size);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      for(const [r,c] of starIdx){
+        const cx = padding + c*cell;
+        const cy = padding + r*cell;
+        ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.fill();
+      }
+
+      // pieces
+      for(let r=0;r<size;r++){
+        for(let c=0;c<size;c++){
+          if(grid[r][c]!==0){
+            drawStone(r,c, grid[r][c]);
+          }
+        }
+      }
+
+      // last move marker
+      if(history.length){
+        const last = history[history.length-1];
+        const [r,c] = last;
+        const cx = padding + c*cell;
+        const cy = padding + r*cell;
+        ctx.strokeStyle = 'rgba(255,255,0,0.7)';
+        ctx.lineWidth = 2;ctx.strokeRect(cx-6,cy-6,12,12);
+      }
+    }
+
+    function drawStone(r,c,who){
+      const cx = padding + c*cell;
+      const cy = padding + r*cell;
+      ctx.beginPath();
+      ctx.arc(cx,cy, Math.floor(cell*0.42),0,Math.PI*2);
+      if(who===1){
+        // black with greenish neon rim
+        const g = ctx.createRadialGradient(cx-4,cy-4,2,cx,cy,Math.floor(cell*0.42));
+        g.addColorStop(0,'#00110a'); g.addColorStop(0.7,'#0b1b10'); g.addColorStop(1,'#05210b');
+        ctx.fillStyle = g; ctx.fill();
+        ctx.strokeStyle = 'rgba(57,255,20,0.14)'; ctx.lineWidth = 2; ctx.stroke();
+      } else {
+        // white with cyan rim
+        const g = ctx.createRadialGradient(cx-4,cy-4,2,cx,cy,Math.floor(cell*0.42));
+        g.addColorStop(0,'#eaf7ff'); g.addColorStop(1,'#d0f0ff');
+        ctx.fillStyle = g; ctx.fill();
+        ctx.strokeStyle = 'rgba(0,200,255,0.18)'; ctx.lineWidth = 2; ctx.stroke();
+      }
+    }
+
+    function getStarPoints(n){
+      if(n>=19) return [[3,3],[3,9],[3,15],[9,3],[9,9],[9,15],[15,3],[15,9],[15,15]]; // rough
+      if(n===15) return [[3,3],[3,7],[3,11],[7,3],[7,7],[7,11],[11,3],[11,7],[11,11]];
+      if(n===13) return [[3,3],[3,6],[3,9],[6,3],[6,6],[6,9],[9,3],[9,6],[9,9]];
+      return [];
+    }
+
+    function canvasToCell(x,y){
+      const rect = canvas.getBoundingClientRect();
+      const cx = x - rect.left; const cy = y - rect.top;
+      // find closest grid point
+      for(let r=0;r<size;r++){
+        for(let c=0;c<size;c++){
+          const gx = padding + c*cell;
+          const gy = padding + r*cell;
+          const d = Math.hypot(cx-gx, cy-gy);
+          if(d < cell*0.45) return [r,c];
+        }
+      }
+      return null;
+    }
+
+    canvas.addEventListener('click', (ev)=>{
+      if(gameOver) return;
+      const pos = canvasToCell(ev.clientX, ev.clientY);
+      if(!pos) return;
+      const [r,c] = pos;
+      if(grid[r][c]!==0) return;
+      grid[r][c] = turn;
+      history.push([r,c]);
+      addHistoryEntry(r,c,turn);
+      beep(120, 0.02);
+      if(checkWin(r,c,turn)){
+        showWin(turn);
+        gameOver = true;
+      } else {
+        turn = 3 - turn;
+        document.getElementById('turnPlayer').textContent = turn===1? 'BLACK' : 'WHITE';
+      }
+      draw();
+    });
+
+    function addHistoryEntry(r,c,who){
+      const h = document.getElementById('history');
+      const p = document.createElement('div');
+      p.textContent = `${who===1? 'B':'W'}: (${r+1},${c+1})`;
+      h.appendChild(p);
+      h.scrollTop = h.scrollHeight;
+    }
+
+    function undo(){
+      if(history.length===0 || gameOver) return;
+      const last = history.pop();
+      grid[last[0]][last[1]] = 0;
+      turn = 3 - turn;
+      document.getElementById('turnPlayer').textContent = turn===1? 'BLACK' : 'WHITE';
+      // remove last history node
+      const h = document.getElementById('history');
+      if(h.lastChild) h.removeChild(h.lastChild);
+      draw();
+    }
+
+    function checkWin(r,c,who){
+      // check 4 directions for 5 in a row
+      const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+      for(const [dr,dc] of dirs){
+        let cnt = 1;
+        // forward
+        for(let k=1;k<5;k++){
+          const rr = r + dr*k, cc = c + dc*k;
+          if(rr<0||cc<0||rr>=size||cc>=size) break;
+          if(grid[rr][cc]===who) cnt++; else break;
+        }
+        // backward
+        for(let k=1;k<5;k++){
+          const rr = r - dr*k, cc = c - dc*k;
+          if(rr<0||cc<0||rr>=size||cc>=size) break;
+          if(grid[rr][cc]===who) cnt++; else break;
+        }
+        if(cnt>=5) return true;
+      }
+      return false;
+    }
+
+    function showWin(who){
+      const tpl = document.getElementById('winTemplate');
+      const node = tpl.content.cloneNode(true);
+      node.querySelector('#winText').textContent = (who===1? 'BLACK':'WHITE') + ' WINS!';
+      document.body.appendChild(node);
+      document.getElementById('closeWin').addEventListener('click', ()=>{
+        const o = document.querySelector('.overlay'); if(o) o.remove();
+        initGrid(size);
+      });
+      // big retro fanfare
+      beep(520,0.08); setTimeout(()=>beep(340,0.08),120);
+    }
+
+    // simple beep using WebAudio
+    const audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+    function beep(freq, duration){
+      const o = audioCtx.createOscillator();
+      const g = audioCtx.createGain();
+      o.type = 'square'; o.frequency.value = freq;
+      g.gain.value = 0.0001; // avoid pops
+      o.connect(g); g.connect(audioCtx.destination);
+      const now = audioCtx.currentTime;
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.06, now+0.005);
+      o.start(now);
+      g.gain.exponentialRampToValueAtTime(0.0001, now+duration);
+      o.stop(now+duration+0.02);
+    }
+
+    // initial setup
+    document.getElementById('restart').addEventListener('click', ()=>initGrid(parseInt(document.getElementById('size').value,10)));
+    document.getElementById('undo').addEventListener('click', undo);
+    document.getElementById('size').addEventListener('change', ()=>{
+      initGrid(parseInt(document.getElementById('size').value,10));
+    });
+
+    // download the current page as standalone html file
+    document.getElementById('download').addEventListener('click', ()=>{
+      // capture the current document's HTML text
+      const html = '<!doctype html>\n' + document.documentElement.outerHTML;
+      const blob = new Blob([html], {type:'text/html'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = 'gomoku_1990_retro.html';
+      document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+    });
+
+    // responsive redrawing
+    window.addEventListener('resize', ()=>{ computeSizes(); draw(); });
+
+    // init and auto-fit
+    initGrid(size);
+    // style tweak: make canvas crisp on HiDPI
+    function fixHiDPI(){
+      const dpr = window.devicePixelRatio || 1;
+      const w = 640, h=640;
+      canvas.width = w * dpr; canvas.height = h * dpr; canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+      computeSizes(); draw();
+    }
+    fixHiDPI();
+  </script>
+</body>
+</html>
